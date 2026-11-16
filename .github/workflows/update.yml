@@ -14,30 +14,30 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Pull latest release into apps.json
+      - name: Update apps.json from latest release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          rel=$(gh api repos/itzzace/ytkace/releases/latest)
+          set -euo pipefail
 
-          # Prefer the build that is NOT tagged iOS16; fall back to any IPA if that's all there is.
-          asset=$(echo "$rel" | jq '
-            [.assets[] | select(.name | endswith(".ipa"))] as $all
-            | [$all[] | select(.name | test("ios16"; "i") | not)] as $new
-            | (if ($new | length) > 0 then $new else $all end)
-            | sort_by(.name) | last')
+          gh api repos/itzzace/ytkace/releases/latest | jq '
+            . as $rel
+            | ([.assets[]
+                | select(.name | endswith(".ipa") and (test("ios16"; "i") | not))]
+               | sort_by(.name) | last) as $a
+            | if $a == null then error("no iOS 17+ IPA found") else . end
+            | ($a.name | capture("_(?<v>[0-9]+(\\.[0-9]+)+)\\.ipa$").v
+                // error("no version in filename: " + $a.name)) as $v
+            | {
+                version:      $v,
+                versionDate:  $rel.published_at[0:10],
+                downloadURL:  $a.browser_download_url,
+                size:         $a.size
+              }' > update.json
 
-          tag=$(echo "$rel" | jq -r '.tag_name')
-          date=$(echo "$rel" | jq -r '.published_at')
-          url=$(echo "$asset" | jq -r '.browser_download_url')
-          size=$(echo "$asset" | jq -r '.size')
-
-          jq --arg v "${tag#v}" --arg d "$date" --arg u "$url" --argjson s "$size" \
-            '.apps[0].version = $v
-             | .apps[0].versionDate = ($d | .[0:10])
-             | .apps[0].downloadURL = $u
-             | .apps[0].size = $s' apps.json > tmp.json
+          jq -s '.[0].apps[0] += .[1] | .[0]' apps.json update.json > tmp.json
           mv tmp.json apps.json
+          rm update.json
 
       - name: Commit if changed
         run: |
