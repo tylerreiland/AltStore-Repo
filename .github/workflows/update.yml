@@ -1,4 +1,4 @@
-name: Update Source JSON
+name: Update source
 
 on:
   schedule:
@@ -20,27 +20,42 @@ jobs:
         run: |
           set -euo pipefail
 
-          gh api repos/itzzace/ytkace/releases/latest | jq '
-            . as $rel
-            | ([.assets[]
-                | select(.name | endswith(".ipa") and (test("ios16"; "i") | not))]
-               | sort_by(.name) | last) as $a
+          rel=$(gh api repos/itzzace/ytkace/releases/latest)
+
+          jq --argjson rel "$rel" '
+            # iOS 17+ build: any IPA not tagged iOS16
+            ([$rel.assets[]
+              | select(.name | endswith(".ipa") and (test("ios16"; "i") | not))]
+             | sort_by(.name) | last) as $a
             | if $a == null then error("no iOS 17+ IPA found") else . end
+
+            # YouTube version = trailing x.y.z before ".ipa"
             | ($a.name | capture("_(?<v>[0-9]+(\\.[0-9]+)+)\\.ipa$").v
                 // error("no version in filename: " + $a.name)) as $v
+
             | ("v" + ($rel.tag_name | ltrimstr("v"))) as $tag
+
             | {
                 version:              $v,
-                versionDate:          $rel.published_at[0:10],
+                date:                 $rel.published_at[0:10],
+                localizedDescription: (if ($rel.body // "") == ""
+                                       then "See release notes: " + $rel.html_url
+                                       else $rel.body end),
                 downloadURL:          $a.browser_download_url,
-                size:                 $a.size,
-                localizedDescription: ("📝[" + $tag + " release notes](" + $rel.html_url + ")"),
-                versionDescription:   ($rel.body // "See release notes: " + $rel.html_url)
-              }' > update.json
+                size:                 $a.size
+              } as $new
 
-          jq -s '.[0].apps[0] += .[1] | .[0]' apps.json update.json > tmp.json
+            | .apps[0] |= (
+                del(.version, .versionDate, .versionDescription, .downloadURL, .size)
+                | .localizedDescription = ("📝[" + $tag + " release notes](" + $rel.html_url + ")")
+                | .versions = (
+                    [$new] + ((.versions // []) | map(select(.downloadURL != $new.downloadURL)))
+                    | .[0:10]
+                  )
+              )
+          ' apps.json > tmp.json
+
           mv tmp.json apps.json
-          rm update.json
 
       - name: Commit if changed
         run: |
@@ -48,3 +63,12 @@ jobs:
           git config user.email "github-actions@users.noreply.github.com"
           git add apps.json
           git diff --cached --quiet || (git commit -m "Update to latest YTKACE release" && git push)
+
+      - name: Heartbeat commit (keeps schedule alive)
+        run: |
+          if [ -z "$(git log --since='25 days ago' --format=%H | head -1)" ]; then
+            date -u +"%Y-%m-%d" > .last-run
+            git add .last-run
+            git commit -m "Heartbeat"
+            git push
+          fi
