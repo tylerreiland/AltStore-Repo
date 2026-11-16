@@ -20,9 +20,12 @@ jobs:
         run: |
           rel=$(gh api repos/itzzace/ytkace/releases/latest)
 
-          # IPAs sorted by name; the highest YouTube version (iOS 17+) sorts last.
-          # Change `last` to `first` if you want the iOS 16 build.
-          asset=$(echo "$rel" | jq '[.assets[] | select(.name | endswith(".ipa"))] | sort_by(.name) | last')
+          # Prefer the build that is NOT tagged iOS16; fall back to any IPA if that's all there is.
+          asset=$(echo "$rel" | jq '
+            [.assets[] | select(.name | endswith(".ipa"))] as $all
+            | [$all[] | select(.name | test("ios16"; "i") | not)] as $new
+            | (if ($new | length) > 0 then $new else $all end)
+            | sort_by(.name) | last')
 
           tag=$(echo "$rel" | jq -r '.tag_name')
           date=$(echo "$rel" | jq -r '.published_at')
