@@ -1,0 +1,44 @@
+name: Update Source JSON
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
+  workflow_dispatch:         # lets you run it manually
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull latest release into apps.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rel=$(gh api repos/itzzace/ytkace/releases/latest)
+
+          # IPAs sorted by name; the highest YouTube version (iOS 17+) sorts last.
+          # Change `last` to `first` if you want the iOS 16 build.
+          asset=$(echo "$rel" | jq '[.assets[] | select(.name | endswith(".ipa"))] | sort_by(.name) | last')
+
+          tag=$(echo "$rel" | jq -r '.tag_name')
+          date=$(echo "$rel" | jq -r '.published_at')
+          url=$(echo "$asset" | jq -r '.browser_download_url')
+          size=$(echo "$asset" | jq -r '.size')
+
+          jq --arg v "${tag#v}" --arg d "$date" --arg u "$url" --argjson s "$size" \
+            '.apps[0].version = $v
+             | .apps[0].versionDate = ($d | .[0:10])
+             | .apps[0].downloadURL = $u
+             | .apps[0].size = $s' apps.json > tmp.json
+          mv tmp.json apps.json
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add apps.json
+          git diff --cached --quiet || (git commit -m "Update to latest YTKACE release" && git push)
