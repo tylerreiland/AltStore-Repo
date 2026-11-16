@@ -28,11 +28,12 @@ jobs:
             | if $a == null then error("no iOS 17+ IPA found") else . end
             | ($a.name | capture("_(?<v>[0-9]+(\\.[0-9]+)+)\\.ipa$").v
                 // error("no version in filename: " + $a.name)) as $v
+            | ("v" + ($rel.tag_name | ltrimstr("v"))) as $tag
             | {
-                version:      $v,
-                versionDate:  $rel.published_at[0:10],
-                downloadURL:  $a.browser_download_url,
-                size:         $a.size,
+                version:              $v,
+                versionDate:          $rel.published_at[0:10],
+                downloadURL:          $a.browser_download_url,
+                size:                 $a.size,
                 localizedDescription: ("📝[" + $tag + " release notes](" + $rel.html_url + ")")
               }' > update.json
 
