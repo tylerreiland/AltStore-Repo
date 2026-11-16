@@ -34,7 +34,8 @@ jobs:
                 versionDate:          $rel.published_at[0:10],
                 downloadURL:          $a.browser_download_url,
                 size:                 $a.size,
-                localizedDescription: ("📝[" + $tag + " release notes](" + $rel.html_url + ")")
+                localizedDescription: ("📝[" + $tag + " release notes](" + $rel.html_url + ")"),
+                versionDescription:   ($rel.body // "See release notes: " + $rel.html_url)
               }' > update.json
 
           jq -s '.[0].apps[0] += .[1] | .[0]' apps.json update.json > tmp.json
