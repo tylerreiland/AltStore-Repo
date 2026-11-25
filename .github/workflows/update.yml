@@ -37,6 +37,7 @@ jobs:
 
             | {
                 version:              $v,
+                buildVersion:         $v,
                 date:                 $rel.published_at[0:10],
                 localizedDescription: (if ($rel.body // "") == ""
                                        then "See release notes: " + $rel.html_url
